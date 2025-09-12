@@ -1,26 +1,356 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notepad Tracker</title>
-    <script>
-        let timeout = null;
-
-        function autoSave() {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                const content = document.getElementById("editor").value;
-                fetch("/save", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({ filename: "note.txt", content: content })
-                }).then(res => res.json())
-                .then(data => console.log(data.message));
-            }, 2000); // waits 2 seconds after typing stops
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
         }
-    </script>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            height: 90vh;
+        }
+        .sidebar {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+        .editor-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        .note-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 4px solid #007bff;
+        }
+        .note-item:hover {
+            background: #e9ecef;
+            transform: translateX(2px);
+        }
+        .note-item.active {
+            background: #007bff;
+            color: white;
+        }
+        .note-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .note-meta {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+        .editor-header {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        .title-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .title-input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        .btn {
+            padding: 12px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .btn.danger {
+            background: #dc3545;
+        }
+        .btn.danger:hover {
+            background: #c82333;
+        }
+        .editor {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+        }
+        .editor:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .new-note-btn {
+            width: 100%;
+            margin-bottom: 20px;
+            background: #28a745;
+        }
+        .new-note-btn:hover {
+            background: #218838;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        h2 {
+            margin: 0 0 15px 0;
+            color: #333;
+        }
+        .empty-state {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            margin-top: 50px;
+        }
+    </style>
 </head>
 <body>
-    <h2>Notepad Tracker</h2>
-    <textarea id="editor" oninput="autoSave()" rows="20" cols="80"></textarea>
+    <h1>📝 Notepad Tracker</h1>
+    
+    <div class="container">
+        <!-- Sidebar with notes list -->
+        <div class="sidebar">
+            <button class="btn new-note-btn" onclick="createNewNote()">+ New Note</button>
+            <h2>Notes</h2>
+            <div id="notesList">
+                <div class="empty-state">No notes yet. Create your first note!</div>
+            </div>
+        </div>
+        
+        <!-- Editor area -->
+        <div class="editor-container">
+            <div class="editor-header">
+                <input type="text" id="titleInput" class="title-input" placeholder="Enter note title..." value="My First Note">
+                <button class="btn" onclick="saveNote()">Save</button>
+                <button class="btn danger" onclick="deleteCurrentNote()" id="deleteBtn" style="display: none;">Delete</button>
+            </div>
+            <textarea id="editor" class="editor" placeholder="Start writing your note here..."></textarea>
+            <div id="status" class="status" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentNoteId = null;
+        let saveTimeout = null;
+        let notes = {};
+
+        // Auto-save functionality
+        function autoSave() {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                if (currentNoteId || document.getElementById("editor").value.trim() || document.getElementById("titleInput").value.trim()) {
+                    saveNote(true); // Silent save
+                }
+            }, 3000); // Auto-save after 3 seconds of inactivity
+        }
+
+        // Load all notes on page load
+        function loadNotes() {
+            fetch("/notes")
+                .then(res => res.json())
+                .then(data => {
+                    notes = data;
+                    displayNotesList();
+                })
+                .catch(err => showStatus("Error loading notes: " + err.message, "error"));
+        }
+
+        // Display notes in sidebar
+        function displayNotesList() {
+            const notesList = document.getElementById("notesList");
+            const notesArray = Object.values(notes).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+            
+            if (notesArray.length === 0) {
+                notesList.innerHTML = '<div class="empty-state">No notes yet. Create your first note!</div>';
+                return;
+            }
+
+            notesList.innerHTML = notesArray.map(note => `
+                <div class="note-item ${currentNoteId === note.id ? 'active' : ''}" onclick="loadNote('${note.id}')">
+                    <div class="note-title">${escapeHtml(note.title)}</div>
+                    <div class="note-meta">Updated: ${formatDate(note.updated_at)}</div>
+                </div>
+            `).join('');
+        }
+
+        // Load a specific note
+        function loadNote(noteId) {
+            if (noteId === currentNoteId) return;
+            
+            fetch(`/load/${noteId}`)
+                .then(res => res.json())
+                .then(note => {
+                    if (note.error) {
+                        showStatus(note.error, "error");
+                        return;
+                    }
+                    
+                    currentNoteId = note.note_id;
+                    document.getElementById("titleInput").value = note.title;
+                    document.getElementById("editor").value = note.content;
+                    document.getElementById("deleteBtn").style.display = "inline-block";
+                    
+                    displayNotesList(); // Refresh to show active state
+                })
+                .catch(err => showStatus("Error loading note: " + err.message, "error"));
+        }
+
+        // Create a new note
+        function createNewNote() {
+            currentNoteId = null;
+            document.getElementById("titleInput").value = "Untitled Note";
+            document.getElementById("editor").value = "";
+            document.getElementById("deleteBtn").style.display = "none";
+            displayNotesList(); // Refresh to clear active state
+            document.getElementById("titleInput").focus();
+        }
+
+        // Save current note
+        function saveNote(silent = false) {
+            const title = document.getElementById("titleInput").value.trim();
+            const content = document.getElementById("editor").value;
+
+            if (!title && !content) {
+                if (!silent) showStatus("Please enter a title or content", "error");
+                return;
+            }
+
+            const data = {
+                title: title || "Untitled Note",
+                content: content,
+                note_id: currentNoteId
+            };
+
+            fetch("/save", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(response => {
+                currentNoteId = response.note_id;
+                document.getElementById("deleteBtn").style.display = "inline-block";
+                
+                if (!silent) {
+                    showStatus(`Note saved! ${response.git_status}`, "success");
+                }
+                
+                // Reload notes list to show updated note
+                loadNotes();
+            })
+            .catch(err => {
+                if (!silent) showStatus("Error saving note: " + err.message, "error");
+            });
+        }
+
+        // Delete current note
+        function deleteCurrentNote() {
+            if (!currentNoteId) return;
+            
+            if (!confirm("Are you sure you want to delete this note?")) return;
+
+            fetch(`/delete/${currentNoteId}`, {
+                method: "DELETE"
+            })
+            .then(res => res.json())
+            .then(response => {
+                showStatus(`Note deleted! ${response.git_status}`, "success");
+                createNewNote(); // Reset to new note state
+                loadNotes(); // Refresh notes list
+            })
+            .catch(err => showStatus("Error deleting note: " + err.message, "error"));
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            const status = document.getElementById("status");
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = "block";
+            
+            setTimeout(() => {
+                status.style.display = "none";
+            }, 5000);
+        }
+
+        // Utility functions
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        // Event listeners
+        document.getElementById("editor").addEventListener("input", autoSave);
+        document.getElementById("titleInput").addEventListener("input", autoSave);
+
+        // Keyboard shortcuts
+        document.addEventListener("keydown", function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.key === 's') {
+                    e.preventDefault();
+                    saveNote();
+                } else if (e.key === 'n') {
+                    e.preventDefault();
+                    createNewNote();
+                }
+            }
+        });
+
+        // Load notes when page loads
+        loadNotes();
+    </script>
 </body>
 </html>
