@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Notepad Tracker</title>
+    <script>
+        let timeout = null;
+
+        function autoSave() {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                const content = document.getElementById("editor").value;
+                fetch("/save", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ filename: "note.txt", content: content })
+                }).then(res => res.json())
+                .then(data => console.log(data.message));
+            }, 2000); // waits 2 seconds after typing stops
+        }
+    </script>
+</head>
+<body>
+    <h2>Notepad Tracker</h2>
+    <textarea id="editor" oninput="autoSave()" rows="20" cols="80"></textarea>
+</body>
+</html>
