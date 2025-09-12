@@ -7,8 +7,8 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Path where files will be saved
-BASE_DIR = os.path.expanduser("~/notepad_tracker_files")
+# Path where files will be saved (in project directory)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # Current project directory
 NOTES_DIR = os.path.join(BASE_DIR, "notes")
 METADATA_FILE = os.path.join(BASE_DIR, "notes_metadata.json")
 
